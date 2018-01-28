@@ -56,8 +56,8 @@ func main() {
 		return astiaudio.NewSilenceDetector(astiaudio.SilenceDetectorConfiguration{})
 	}
 
-	// Create speech to text
-	stt := astispeechtotext.New(astispeechtotext.Configuration{
+	// Create speech parser
+	sp := astispeechtotext.NewSpeechParser(astispeechtotext.SpeechParserConfiguration{
 		AlphabetConfigPath: "demo/alphabet.txt",
 		BeamWidth:          500,
 		ModelPath:          understandingDirectory + "/deepspeech/export/output_graph.pb",
@@ -84,7 +84,7 @@ func main() {
 	})
 
 	// Create understanding
-	understanding, err := astiunderstanding.NewAbility(stt, sd, astiunderstanding.AbilityConfiguration{
+	understanding, err := astiunderstanding.NewAbility(sp, sd, astiunderstanding.AbilityConfiguration{
 		SamplesDirectory: understandingDirectory,
 	})
 	if err != nil {

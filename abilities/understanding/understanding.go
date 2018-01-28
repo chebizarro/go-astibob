@@ -1,9 +1,17 @@
 package astiunderstanding
 
+import "context"
+
 // Constants
 const (
 	name = "Understanding"
 )
+
+// Preparer represents an object capable of preparing training data
+type Preparer interface {
+	Prepare(ctx context.Context, srcDir, dstDir string) error
+	SetFuncs(fnError func(id string, err error), fnSkip, fnSuccess func(id string))
+}
 
 // SilenceDetector represents an object capable of detecting valid samples between silences
 type SilenceDetector interface {
@@ -18,7 +26,13 @@ type SpeechParser interface {
 
 // Websocket event names
 const (
-	websocketEventNameAnalysis      = "analysis"
-	websocketEventNameSamples       = "samples"
-	websocketEventNameSamplesStored = "samples.stored"
+	websocketEventNameAnalysis           = "analysis"
+	websocketEventNamePrepareCancel      = "prepare.cancel"
+	websocketEventNamePrepareDone        = "prepare.done"
+	websocketEventNamePrepareItemError   = "prepare.item.error"
+	websocketEventNamePrepareItemSkip    = "prepare.item.skip"
+	websocketEventNamePrepareItemSuccess = "prepare.item.success"
+	websocketEventNamePrepareStart       = "prepare.start"
+	websocketEventNameSamples            = "samples"
+	websocketEventNameSamplesStored      = "samples.stored"
 )

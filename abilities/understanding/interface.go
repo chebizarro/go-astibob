@@ -292,7 +292,10 @@ func (i *Interface) webTemplateIndex() string {
 {{ define "html" }}
 	<div class="header">Validate samples</div>
 	<p>Listen to the audio, write the transcript and press "Enter" to validate or "Ctrl+Enter" to remove.</p>
-	<div class="flex" id="samples-to-be-validated"></div>
+	<div class="flex" id="samples-to-be-validated" style="margin-bottom: 30px"></div>
+	<div class="header">Prepare training data</div>
+	<p>Click "Prepare" to prepare the training data.</p>
+	<button class="color-default-front" id="btn-prepare">Prepare</button>
 {{ end }}
 {{ define "js" }}
 <script type="text/javascript">
@@ -313,6 +316,9 @@ func (i *Interface) webTemplateIndex() string {
 						// Make sure the first input is focused
 						$("#samples-to-be-validated input").eq(0).focus();
 					}
+
+					// Handle prepare
+					$("#btn-prepare").click(understanding.handleClickPrepare);
 
 					// Finish
 					base.finish();
@@ -385,6 +391,33 @@ func (i *Interface) webTemplateIndex() string {
 		stopAudio: function(audio) {
 			audio.pause();
 			audio.currentTime = 0;
+		},
+		handleClickPrepare: function() {
+			// Create wrapper
+			let wrapper = document.createElement("div");
+
+			// Create console
+			let console = document.createElement("div");
+			console.style.height = "200px";
+			wrapper.appendChild(console);
+
+			// Create button
+			let button = document.createElement("button");
+			button.className = "color-default-front";
+			button.onclick = function() {
+				// Send ws event
+				base.sendWs(base.abilityWebsocketEventName("prepare.cancel"))
+			}
+			button.innerText = "Cancel"
+			wrapper.appendChild(button);
+
+			// Show modal
+			asticode.modaler.setWidth("300px");
+			asticode.modaler.setContent(wrapper);
+			asticode.modaler.show();
+
+			// Send ws event
+			base.sendWs(base.abilityWebsocketEventName("prepare.start"))
 		},
     	websocketFunc: function(event_name, payload) {
 			switch (event_name) {

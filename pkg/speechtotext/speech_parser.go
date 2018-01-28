@@ -1,21 +1,22 @@
 package astispeechtotext
 
 import (
+	"os"
+
 	"github.com/asticode/go-astideepspeech"
 	"github.com/asticode/go-astilog"
 	"github.com/asticode/go-astitools/audio"
 	"github.com/pkg/errors"
-	"os"
 )
 
-// SpeechToText represents an object capable of doing speech to text operations
-type SpeechToText struct {
+// SpeechParser represents an object capable of parsing speech
+type SpeechParser struct {
 	m *astideepspeech.Model
-	c Configuration
+	c SpeechParserConfiguration
 }
 
-// Configuration represents a configuration
-type Configuration struct {
+// SpeechParserConfiguration represents speech parser configuration
+type SpeechParserConfiguration struct {
 	AlphabetConfigPath   string  `toml:"alphabet_config_path"`
 	BeamWidth            int     `toml:"beam_width"`
 	LMPath               string  `toml:"lm_path"`
@@ -28,10 +29,10 @@ type Configuration struct {
 	WordCountWeight      float64 `toml:"word_count_weight"`
 }
 
-// New creates a new speech to text parser
-func New(c Configuration) (s *SpeechToText) {
-	// Create speech to text
-	s = &SpeechToText{c: c}
+// New creates a new speech parser
+func NewSpeechParser(c SpeechParserConfiguration) (s *SpeechParser) {
+	// Create speech parser
+	s = &SpeechParser{c: c}
 
 	// Only do the following if the model exists
 	if _, err := os.Stat(c.ModelPath); err == nil {
@@ -49,7 +50,7 @@ func New(c Configuration) (s *SpeechToText) {
 }
 
 // Close implements the io.Closer interface
-func (s *SpeechToText) Close() error {
+func (s *SpeechParser) Close() error {
 	// Close model
 	if s.m != nil {
 		astilog.Debugf("astispeechtotext: closing model")
@@ -60,8 +61,8 @@ func (s *SpeechToText) Close() error {
 	return nil
 }
 
-// SpeechToText implements the astiunderstanding.SpeechToText interface
-func (s *SpeechToText) SpeechToText(samples []int32, sampleRate, significantBits int) (text string, err error) {
+// SpeechToText implements the astiunderstanding.SpeechParser interface
+func (s *SpeechParser) SpeechToText(samples []int32, sampleRate, significantBits int) (text string, err error) {
 	// Model has not been set
 	if s.m == nil {
 		return

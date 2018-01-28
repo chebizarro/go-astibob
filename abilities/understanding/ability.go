@@ -27,14 +27,14 @@ type Ability struct {
 	d            *astisync.Do
 	dispatchFunc astibrain.DispatchFunc
 	m            sync.Mutex // Locks sds
-	p            SpeechParser
+	p            Preparer
+	sp           SpeechParser
 	sd           func() SilenceDetector
 	sds          map[string]SilenceDetector // Indexed by brain name
 }
 
 // AbilityConfiguration represents an ability configuration
 // TODO Add option in UI to enable/disable the StoreSamples option
-// TODO Add option in UI to prepare training data
 // TODO Add option in UI to train data
 type AbilityConfiguration struct {
 	SamplesDirectory string `toml:"samples_directory"`
@@ -42,15 +42,19 @@ type AbilityConfiguration struct {
 }
 
 // NewAbility creates a new ability
-func NewAbility(p SpeechParser, sd func() SilenceDetector, c AbilityConfiguration) (a *Ability, err error) {
+func NewAbility(sp SpeechParser, sd func() SilenceDetector, p Preparer, c AbilityConfiguration) (a *Ability, err error) {
 	// Create
 	a = &Ability{
 		c:   c,
 		d:   astisync.NewDo(),
 		p:   p,
+		sp:  sp,
 		sd:  sd,
 		sds: make(map[string]SilenceDetector),
 	}
+
+	// Set preparer funcs
+	p.SetFuncs(a.prepareFnError, a.prepareFnSkip, a.prepareFnSuccess)
 
 	// Absolute paths
 	if len(a.c.SamplesDirectory) > 0 {
@@ -125,7 +129,7 @@ func (a *Ability) processSamples(brainName string, samples []int32, sampleRate, 
 		// Execute speech to text analysis
 		start := time.Now()
 		astilog.Debugf("astiunderstanding: starting speech to text analysis on %d samples from brain %s", len(samples), brainName)
-		text, err := a.p.SpeechToText(samples, sampleRate, significantBits)
+		text, err := a.sp.SpeechToText(samples, sampleRate, significantBits)
 		if err != nil {
 			astilog.Error(errors.Wrap(err, "astiunderstanding: speech to text analysis failed"))
 			return
@@ -294,4 +298,41 @@ func (a *Ability) websocketListenerSamples(c *astiws.Client, eventName string, p
 	// Dispatch
 	a.ch <- p
 	return nil
+}
+
+// PayloadPrepareItem represents a prepare item payload
+type PayloadPrepareItem struct {
+	Error string `json:"error"`
+	ID    string `json:"id"`
+}
+
+func (a *Ability) prepareFnError(id string, err error) {
+	a.dispatchFunc(astibrain.Event{
+		AbilityName: name,
+		Name:        websocketEventNamePrepareItemError,
+		Payload: PayloadPrepareItem{
+			Error: err.Error(),
+			ID:    id,
+		},
+	})
+}
+
+func (a *Ability) prepareFnSkip(id string) {
+	a.dispatchFunc(astibrain.Event{
+		AbilityName: name,
+		Name:        websocketEventNamePrepareItemSkip,
+		Payload: PayloadPrepareItem{
+			ID: id,
+		},
+	})
+}
+
+func (a *Ability) prepareFnSuccess(id string) {
+	a.dispatchFunc(astibrain.Event{
+		AbilityName: name,
+		Name:        websocketEventNamePrepareItemSuccess,
+		Payload: PayloadPrepareItem{
+			ID: id,
+		},
+	})
 }

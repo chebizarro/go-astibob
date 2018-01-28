@@ -267,10 +267,10 @@ func (i *Interface) webTemplateIndex() string {
 	return `{{ define "title" }}Hearing{{ end }}
 {{ define "css" }}{{ end }}
 {{ define "html" }}
-<div class='header'>Calibration</div>
-<p>Click "Calibrate" to retrieve the max audio level as well as the suggested silence max audio level appropriate to your audio device.</p>
-<button class="color-default-front" id="btn-calibrate">Calibrate</button>
-<p id="calibration-results"></p>
+	<div class='header'>Calibration</div>
+	<p>Click "Calibrate" to retrieve the max audio level as well as the suggested silence max audio level appropriate to your audio device.</p>
+	<button class="color-default-front" id="btn-calibrate">Calibrate</button>
+	<p id="calibration-results"></p>
 {{ end }}
 {{ define "js" }}
 <script type="text/javascript">
