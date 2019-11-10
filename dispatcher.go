@@ -1,65 +1,164 @@
 package astibob
 
-import "sync"
+import (
+	"context"
+	"fmt"
+	"sync"
 
-// Listener represents a listener executed when an event is dispatched
-type Listener func(e Event) (deleteListener bool)
+	"github.com/asticode/go-astilog"
+	astisync "github.com/asticode/go-astitools/sync"
+	astiworker "github.com/asticode/go-astitools/worker"
+	"github.com/pkg/errors"
+)
 
-// dispatcher represents an object capable of dispatching events
-type dispatcher struct {
-	id int
-	f  map[string]map[int]Listener
-	m  sync.Mutex
+type MessageHandler func(m *Message) error
+
+type dispatcherHandler struct {
+	c DispatchConditions
+	h MessageHandler
 }
 
-// newDispatcher creates a new dispatcher
-func newDispatcher() *dispatcher {
-	return &dispatcher{f: make(map[string]map[int]Listener)}
+type DispatchConditions struct {
+	From  *Identifier
+	Name  *string
+	Names map[string]bool
+	To    *Identifier
 }
 
-// addListener adds a listener
-func (d *dispatcher) addListener(eventName string, l Listener) {
-	d.m.Lock()
-	defer d.m.Unlock()
-	if _, ok := d.f[eventName]; !ok {
-		d.f[eventName] = make(map[int]Listener)
+func (c DispatchConditions) match(m *Message) bool {
+	// Check from
+	if c.From != nil && !c.From.match(m.From) {
+		return false
 	}
-	d.id++
-	d.f[eventName][d.id] = l
-}
 
-// delListener deletes a listener
-func (d *dispatcher) delListener(eventName string, id int) {
-	d.m.Lock()
-	defer d.m.Unlock()
-	if _, ok := d.f[eventName]; !ok {
-		return
-	}
-	delete(d.f[eventName], id)
-}
-
-// Dispatch dispatches an event
-func (d *dispatcher) dispatch(e Event) {
-	// needed so dispatches of events triggered in the listeners can be received without blocking
-	go func() {
-		for id, l := range d.listeners(e.Name) {
-			if l(e) {
-				d.delListener(e.Name, id)
-			}
+	// Check name
+	if c.Names != nil {
+		if _, ok := c.Names[m.Name]; !ok {
+			return false
 		}
-	}()
+	} else if c.Name != nil && *c.Name != m.Name {
+		return false
+	}
+
+	// Check to
+	if c.To != nil {
+		// Check message
+		if m.To == nil {
+			return false
+		}
+
+		// Check identifier
+		if !c.To.match(*m.To) {
+			return false
+		}
+	}
+	return true
 }
 
-// listeners returns the listeners for an event name
-func (d *dispatcher) listeners(eventName string) (ls map[int]Listener) {
-	d.m.Lock()
-	defer d.m.Unlock()
-	ls = map[int]Listener{}
-	if _, ok := d.f[eventName]; !ok {
-		return
+type Dispatcher struct {
+	ctx context.Context
+	cs  map[string]*astisync.Chan
+	hs  []dispatcherHandler
+	mc  *sync.Mutex // Locks cs
+	mh  *sync.Mutex // Locks hs
+	t   astiworker.TaskFunc
+}
+
+func NewDispatcher(ctx context.Context, t astiworker.TaskFunc) *Dispatcher {
+	return &Dispatcher{
+		ctx: ctx,
+		cs:  make(map[string]*astisync.Chan),
+		mc:  &sync.Mutex{},
+		mh:  &sync.Mutex{},
+		t:   t,
 	}
-	for k, v := range d.f[eventName] {
-		ls[k] = v
+}
+
+func (d *Dispatcher) Close() {
+	// Lock
+	d.mc.Lock()
+	defer d.mc.Unlock()
+
+	// Stop chans
+	for _, c := range d.cs {
+		c.Stop()
 	}
-	return
+}
+
+func (d *Dispatcher) Dispatch(m *Message) {
+	// Lock
+	d.mh.Lock()
+	defer d.mh.Unlock()
+
+	// Loop through handlers
+	var c *astisync.Chan
+	for _, h := range d.hs {
+		// No match
+		if !h.c.match(m) {
+			continue
+		}
+
+		// No chan
+		if c == nil {
+			// Get message key
+			k := d.key(m)
+
+			// Lock
+			d.mc.Lock()
+
+			// Get chan
+			var ok bool
+			if c, ok = d.cs[k]; !ok {
+				// Log
+				astilog.Debugf("astibob: creating new dispatcher chan with key %s", k)
+
+				// Create chan
+				c = astisync.NewChan(astisync.ChanOptions{TaskFunc: d.t})
+				d.cs[k] = c
+
+				// Start chan
+				go c.Start(d.ctx)
+			}
+
+			// Unlock
+			d.mc.Unlock()
+		}
+
+		// Dispatch
+		d.dispatch(c, m, h.h)
+	}
+}
+
+// We don't want one dispatch to delay Cmds and Events, that's why we create specific chans for each of them. For now
+// we're limiting this behavior to Cmds and Events for lack of examples of other cases.
+func (d *Dispatcher) key(m *Message) string {
+	// Message to runnable: Cmds
+	if m.To != nil && m.To.Type == RunnableIdentifierType {
+		return fmt.Sprintf("to.runnable.%s.%s", *m.To.Worker, *m.To.Name)
+	}
+
+	// Message from runnable: Events
+	if m.From.Type == RunnableIdentifierType {
+		return fmt.Sprintf("from.runnable.%s.%s", *m.From.Worker, *m.From.Name)
+	}
+	return "default"
+}
+
+func (d *Dispatcher) dispatch(c *astisync.Chan, m *Message, h MessageHandler) {
+	// Add to chan
+	c.Add(func() {
+		// Handle message
+		if err := h(m); err != nil {
+			astilog.Error(errors.Wrap(err, "astibob: handling message failed"))
+		}
+	})
+}
+
+func (d *Dispatcher) On(c DispatchConditions, h MessageHandler) {
+	d.mh.Lock()
+	defer d.mh.Unlock()
+	d.hs = append(d.hs, dispatcherHandler{
+		c: c,
+		h: h,
+	})
 }
